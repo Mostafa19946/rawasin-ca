@@ -170,7 +170,43 @@ async function ensureSchema() {
   `);
 }
 
+// استيراد أولي تلقائي: لو الجداول فاضية (أول تشغيل بعد إنشاء قاعدة البيانات)، يستورد
+// بيانات Airtable القديمة من ملفات data/installments.json و data/users.json المرفقة
+// مع الكود. بعد أول استيراد ناجح، الجداول بقى فيها بيانات فمش هيتكرر تاني في أي إعادة تشغيل.
+async function autoImportIfEmpty() {
+  const fs = require('fs');
+  const path = require('path');
+  const { rows } = await pool.query('SELECT count(*)::int AS c FROM installments');
+  if (rows[0].c > 0) { console.log('البيانات موجودة بالفعل، مفيش استيراد.'); return; }
+
+  const installmentsPath = path.join(__dirname, 'data', 'installments.json');
+  const usersPath = path.join(__dirname, 'data', 'users.json');
+  if (fs.existsSync(installmentsPath)) {
+    const list = JSON.parse(fs.readFileSync(installmentsPath, 'utf-8'));
+    for (const r of list) {
+      await pool.query(
+        `INSERT INTO installments (id, fields, updated_at) VALUES ($1, $2, now())
+         ON CONFLICT (id) DO NOTHING`,
+        [r.id, r.fields]
+      );
+    }
+    console.log('تم استيراد ' + list.length + ' قسط.');
+  }
+  if (fs.existsSync(usersPath)) {
+    const list = JSON.parse(fs.readFileSync(usersPath, 'utf-8'));
+    for (const r of list) {
+      await pool.query(
+        `INSERT INTO users (id, fields, updated_at) VALUES ($1, $2, now())
+         ON CONFLICT (id) DO NOTHING`,
+        [r.id, r.fields]
+      );
+    }
+    console.log('تم استيراد ' + list.length + ' مستخدم.');
+  }
+}
+
 const PORT = process.env.PORT || 3000;
 ensureSchema()
+  .then(() => autoImportIfEmpty())
   .then(() => app.listen(PORT, () => console.log('server listening on ' + PORT)))
-  .catch(err => { console.error('فشل تجهيز الجداول:', err); process.exit(1); });
+  .catch(err => { console.error('فشل تجهيز الجداول أو الاستيراد:', err); process.exit(1); });
