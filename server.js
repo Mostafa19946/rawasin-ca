@@ -212,8 +212,21 @@ async function autoImportIfEmpty() {
   }
 }
 
+// إصلاح ذاتي: نسخة قديمة من الاستيراد نسيت تحط حقل "اسم المستخدم" جوه fields نفسها
+// (كان موجود بس كـ id السجل)، وده كان بيمنع تسجيل الدخول لأن الكود بيدور على
+// fields['اسم المستخدم']. الدالة دي بتتأكد إن كل مستخدم فيه الحقل ده مطابق للـ id بتاعه،
+// وآمنة تتنفذ في كل تشغيل من غير ما تأثر على حاجة تانية.
+async function repairUserUsernameField() {
+  await pool.query(`
+    UPDATE users
+    SET fields = jsonb_set(fields, '{اسم المستخدم}', to_jsonb(id::text))
+    WHERE NOT (fields ? 'اسم المستخدم') OR fields->>'اسم المستخدم' = ''
+  `);
+}
+
 const PORT = process.env.PORT || 3000;
 ensureSchema()
   .then(() => autoImportIfEmpty())
+  .then(() => repairUserUsernameField())
   .then(() => app.listen(PORT, () => console.log('server listening on ' + PORT)))
   .catch(err => { console.error('فشل تجهيز الجداول أو الاستيراد:', err); process.exit(1); });
