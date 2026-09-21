@@ -176,14 +176,14 @@ async function ensureSchema() {
 async function autoImportIfEmpty() {
   const fs = require('fs');
   const path = require('path');
-  const { rows } = await pool.query('SELECT count(*)::int AS c FROM installments');
-  if (rows[0].c > 0) { console.log('البيانات موجودة بالفعل، مفيش استيراد.'); return; }
-
   const installmentsPath = path.join(__dirname, 'data', 'installments.json');
   const usersPath = path.join(__dirname, 'data', 'users.json');
-  if (fs.existsSync(installmentsPath)) {
+
+  const { rows: irows } = await pool.query('SELECT count(*)::int AS c FROM installments');
+  if (irows[0].c === 0 && fs.existsSync(installmentsPath)) {
     const list = JSON.parse(fs.readFileSync(installmentsPath, 'utf-8'));
     for (const r of list) {
+      if (!r.id) continue;
       await pool.query(
         `INSERT INTO installments (id, fields, updated_at) VALUES ($1, $2, now())
          ON CONFLICT (id) DO NOTHING`,
@@ -191,10 +191,15 @@ async function autoImportIfEmpty() {
       );
     }
     console.log('تم استيراد ' + list.length + ' قسط.');
+  } else {
+    console.log('الأقساط موجودة بالفعل، مفيش استيراد.');
   }
-  if (fs.existsSync(usersPath)) {
+
+  const { rows: urows } = await pool.query('SELECT count(*)::int AS c FROM users');
+  if (urows[0].c === 0 && fs.existsSync(usersPath)) {
     const list = JSON.parse(fs.readFileSync(usersPath, 'utf-8'));
     for (const r of list) {
+      if (!r.id) continue;
       await pool.query(
         `INSERT INTO users (id, fields, updated_at) VALUES ($1, $2, now())
          ON CONFLICT (id) DO NOTHING`,
@@ -202,6 +207,8 @@ async function autoImportIfEmpty() {
       );
     }
     console.log('تم استيراد ' + list.length + ' مستخدم.');
+  } else {
+    console.log('المستخدمين موجودين بالفعل، مفيش استيراد.');
   }
 }
 
